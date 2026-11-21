@@ -29,29 +29,29 @@ function stageLevel(world, level, foundIds, score, timeLeft) {
  */
 export function stageShot(name, world) {
   if (name === 'play') {
-    const state = stageLevel(world, 0, [0, 2, 5], 325, 118);
+    const state = stageLevel(world, 0, [0, 2, 5], 375, 118);
     state.message = 'Found the jumping fish! +150 (combo x3) — 4 to go.';
     state.messageUntil = 999;
     return { screen: SCREEN_PLAY };
   }
   if (name === 'level2') {
-    const state = stageLevel(world, 1, [1, 4], 740, 96);
+    const state = stageLevel(world, 1, [1, 4], 2090, 96);
     state.message = 'Found an extra log! +125 (combo x2) — 5 to go.';
     state.messageUntil = 999;
     return { screen: SCREEN_PLAY };
   }
   if (name === 'end') {
-    const state = stageLevel(world, 2, [0, 1, 2, 3, 4, 5, 6], 2140, 42);
+    const state = stageLevel(world, 2, [0, 1, 2, 3, 4, 5, 6], 5695, 42);
     state.totalFound = 21;
     state.bestCombo = 7;
-    state.best = 2140;
+    state.best = 5695;
     state.message = 'All 21 differences found — three scenes cleared!';
     state.messageUntil = 999;
     state.screen = SCREEN_WIN;
     return { screen: SCREEN_WIN };
   }
   if (name === 'level') {
-    const state = stageLevel(world, 0, [0, 1, 2, 3, 4, 5, 6], 890, 64);
+    const state = stageLevel(world, 0, [0, 1, 2, 3, 4, 5, 6], 1865, 64);
     state.levelBonus = 640;
     state.totalFound = 7;
     state.screen = SCREEN_LEVEL;
