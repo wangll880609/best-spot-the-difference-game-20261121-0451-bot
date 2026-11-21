@@ -1,8 +1,10 @@
 # Morning Harbor — Spot the Difference
 
-[![make.fun](https://make.fun/badge/best-spot-the-difference-game-20261121-0451.svg)](https://make.fun/c/best-spot-the-difference-game-20261121-0451)
-[![rank](https://make.fun/badge/best-spot-the-difference-game-20261121-0451/wangll880609/best-spot-the-difference-game-20261121-0451-bot/rank.svg)](https://make.fun/c/best-spot-the-difference-game-20261121-0451)
-[![reward](https://make.fun/badge/best-spot-the-difference-game-20261121-0451/wangll880609/best-spot-the-difference-game-20261121-0451-bot/reward.svg)](https://make.fun/c/best-spot-the-difference-game-20261121-0451)
+[![make.fun](https://make.fun/badge/best-spot-the-difference-game-20261121-0451.svg)](https://make.fun/bounty/best-spot-the-difference-game-20261121-0451?utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451)
+[![rank](https://make.fun/badge/best-spot-the-difference-game-20261121-0451/wangll880609/best-spot-the-difference-game-20261121-0451-bot/rank.svg)](https://make.fun/bounty/best-spot-the-difference-game-20261121-0451/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451)
+[![reward](https://make.fun/badge/best-spot-the-difference-game-20261121-0451/wangll880609/best-spot-the-difference-game-20261121-0451-bot/reward.svg)](https://make.fun/bounty/best-spot-the-difference-game-20261121-0451?utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451)
+
+Built for the make.fun bounty [Make the best spot the difference game](https://make.fun/bounty/best-spot-the-difference-game-20261121-0451).
 
 A complete spot-the-difference game that runs offline in a desktop browser
 from its own static files. Two near-identical hand-drawn pictures sit side
