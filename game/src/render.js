@@ -1,272 +1,276 @@
-// Drawing only: the world's state and the current screen in, pixels out. The 1280x720
-// playfield is scaled to fit the window and centred, the margin filled with the backdrop
-// colour. The two picture panels sit side by side; found differences wear a gold ring and
-// a check, the counter says how many are left, and the timer bar shows the pressure.
-import { BAR, DIFFS_PER_LEVEL, FIELD, FONT, HUD, LEVELS, PALETTE, PANEL } from './config.js';
-import { SCENES, DIFFS } from './scenes.js';
-import { SCREEN_LEVEL, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './world.js';
+// Morning Harbor — Spot the Difference.
+// render.js: everything the player sees, drawn on one canvas. The HUD
+// (score, best, combo, clock, found counter, hints), the two picture
+// panels with their found markers and hint ring, floating score popups,
+// and the six screens: title, play, pause, level clear, win, timeout.
+// `now` is seconds; staged screenshots pass 0 so the frame never moves.
 
-const BUTTONS = {
-  hint: { x: 880, y: 652, w: 120, h: 44, label: 'Hint (H)' },
-  pause: { x: 1010, y: 652, w: 120, h: 44, label: 'Pause (P)' },
-  sound: { x: 1140, y: 652, w: 120, h: 44, label: 'Sound (M)' },
-};
+import {
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  DIFFERENCES_PER_LEVEL,
+  HUD_HEIGHT,
+  LEFT_PANEL_X,
+  LEVEL_SECONDS,
+  PANEL_HEIGHT,
+  PANEL_WIDTH,
+  PANEL_Y,
+  RIGHT_PANEL_X,
+  SCREENS,
+} from './config.js';
+import { SCENES } from './scenes.js';
+import { currentScene, foundCount } from './state.js';
 
-/** Hit-test for the bottom-bar buttons, in logical playfield coordinates. */
-export function buttonAt(x, y) {
-  for (const [name, b] of Object.entries(BUTTONS)) {
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return name;
-  }
-  return null;
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
-/** Which panel (0 left, 1 right) a logical point falls in, and its panel-local coords. */
-export function panelAt(x, y) {
-  if (y < PANEL.top || y > PANEL.top + PANEL.height) return null;
-  if (x >= PANEL.leftX && x <= PANEL.leftX + PANEL.width) {
-    return { side: 0, x: x - PANEL.leftX, y: y - PANEL.top };
-  }
-  if (x >= PANEL.rightX && x <= PANEL.rightX + PANEL.width) {
-    return { side: 1, x: x - PANEL.rightX, y: y - PANEL.top };
-  }
-  return null;
+function text(ctx, str, x, y, font, fill, align = 'left') {
+  ctx.font = font;
+  ctx.fillStyle = fill;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
 }
 
-export function createRenderer(canvas) {
-  const context = canvas.getContext('2d');
-  const view = { scale: 1, x: 0, y: 0 };
+function checkMark(ctx, x, y, s, color, width) {
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.5, y);
+  ctx.lineTo(x - s * 0.12, y + s * 0.38);
+  ctx.lineTo(x + s * 0.55, y - s * 0.42);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
 
-  function resize() {
-    const ratio = window.devicePixelRatio || 1;
-    const width = Math.round(window.innerWidth * ratio);
-    const height = Math.round(window.innerHeight * ratio);
-    canvas.width = width;
-    canvas.height = height;
-    view.scale = Math.min(width / FIELD.width, height / FIELD.height);
-    view.x = (width - FIELD.width * view.scale) / 2;
-    view.y = (height - FIELD.height * view.scale) / 2;
+function drawFoundMarker(ctx, x, y, r) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.strokeStyle = '#2f9e5f';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(47,158,95,0.18)';
+  ctx.fill();
+  checkMark(ctx, x, y, r * 0.9, '#2f9e5f', 5);
+}
+
+function drawHintRing(ctx, x, y, r, now) {
+  const pulse = 1 + 0.12 * Math.sin(now * 5);
+  ctx.beginPath();
+  ctx.arc(x, y, r * pulse, 0, Math.PI * 2);
+  ctx.strokeStyle = '#f2b705';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([10, 7]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawPanel(ctx, game, originX, variant, now) {
+  const scene = currentScene(game);
+  ctx.save();
+  roundRect(ctx, originX, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, 14);
+  ctx.clip();
+  ctx.save();
+  ctx.translate(originX, PANEL_Y);
+  scene.draw(ctx, variant);
+  ctx.restore();
+  for (const diff of scene.diffs) {
+    if (game.found.has(diff.id)) drawFoundMarker(ctx, originX + diff.x, PANEL_Y + diff.y, diff.r);
   }
-
-  const fonts = new Map();
-  function text(value, x, y, size, color, align, weight) {
-    const key = `${weight ?? ''}${size}`;
-    if (!fonts.has(key)) fonts.set(key, `${weight ?? ''}${size}px ${FONT}`);
-    context.font = fonts.get(key);
-    context.fillStyle = color;
-    context.textAlign = align ?? 'left';
-    context.textBaseline = 'top';
-    context.fillText(value, x, y);
+  if (game.hintedId) {
+    const hinted = scene.diffs.find((d) => d.id === game.hintedId);
+    if (hinted) drawHintRing(ctx, originX + hinted.x, PANEL_Y + hinted.y, hinted.r + 6, now);
   }
-
-  function roundRect(x, y, w, h, r) {
-    context.beginPath();
-    context.moveTo(x + r, y);
-    context.arcTo(x + w, y, x + w, y + h, r);
-    context.arcTo(x + w, y + h, x, y + h, r);
-    context.arcTo(x, y + h, x, y, r);
-    context.arcTo(x, y, x + w, y, r);
-    context.closePath();
+  for (const f of game.floats) {
+    ctx.font = 'bold 26px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.strokeText(f.text, originX + f.x, PANEL_Y + f.y - 34);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, originX + f.x, PANEL_Y + f.y - 34);
   }
+  ctx.restore();
+  ctx.strokeStyle = '#33414f';
+  ctx.lineWidth = 3;
+  roundRect(ctx, originX, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, 14);
+  ctx.stroke();
+  const tag = variant ? 'RIGHT' : 'LEFT';
+  ctx.fillStyle = 'rgba(20,28,38,0.78)';
+  roundRect(ctx, originX + 12, PANEL_Y + 12, 74, 30, 8);
+  ctx.fill();
+  text(ctx, tag, originX + 49, PANEL_Y + 28, 'bold 16px system-ui, sans-serif', '#ffffff', 'center');
+}
 
-  function drawMarker(x, y, r, pulse) {
-    const rr = pulse ? r * (1 + 0.08 * Math.sin(pulse * 6)) : r;
-    context.strokeStyle = PALETTE.gold;
-    context.lineWidth = 5;
-    context.beginPath();
-    context.arc(x, y, rr, 0, Math.PI * 2);
-    context.stroke();
-    context.strokeStyle = PALETTE.goldDark;
-    context.lineWidth = 2;
-    context.beginPath();
-    context.arc(x, y, rr + 4, 0, Math.PI * 2);
-    context.stroke();
-    // The check inside the ring.
-    context.strokeStyle = PALETTE.gold;
-    context.lineWidth = 5;
-    context.lineCap = 'round';
-    context.beginPath();
-    context.moveTo(x - r * 0.45, y);
-    context.lineTo(x - r * 0.12, y + r * 0.35);
-    context.lineTo(x + r * 0.5, y - r * 0.35);
-    context.stroke();
+function drawHud(ctx, game) {
+  ctx.fillStyle = '#1d2a38';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, HUD_HEIGHT);
+  const scene = currentScene(game);
+  text(ctx, 'MORNING HARBOR', 20, 26, 'bold 24px system-ui, sans-serif', '#ffd94d');
+  text(ctx, `Scene ${game.levelIndex + 1} of 3 · ${scene.name}`, 20, 50, '15px system-ui, sans-serif', '#bcd0de');
+  text(ctx, `SCORE  ${game.score}`, 470, 26, 'bold 22px system-ui, sans-serif', '#ffffff');
+  text(ctx, `BEST  ${game.best}`, 470, 50, '15px system-ui, sans-serif', '#bcd0de');
+  const comboLabel = game.combo > 1 ? `COMBO x${game.combo}` : 'COMBO —';
+  text(ctx, comboLabel, 700, 26, 'bold 20px system-ui, sans-serif', game.combo > 1 ? '#7be3a8' : '#8fa5b5');
+  text(ctx, `HINTS  ${'●'.repeat(game.hintsLeft)}${'○'.repeat(3 - game.hintsLeft)}  (H)`, 700, 50, '15px system-ui, sans-serif', '#bcd0de');
+  const remain = `${foundCount(game)}/${DIFFERENCES_PER_LEVEL} FOUND`;
+  text(ctx, remain, 1000, 26, 'bold 20px system-ui, sans-serif', '#ffffff');
+  const secs = Math.max(0, Math.ceil(game.timeLeft));
+  const frac = Math.max(0, game.timeLeft / LEVEL_SECONDS);
+  ctx.fillStyle = '#0f1822';
+  roundRect(ctx, 1000, 40, 220, 14, 7);
+  ctx.fill();
+  ctx.fillStyle = frac < 0.17 ? '#e2574c' : frac < 0.34 ? '#f2a541' : '#2f9e5f';
+  if (frac > 0) {
+    roundRect(ctx, 1000, 40, 220 * frac, 14, 7);
+    ctx.fill();
   }
+  text(ctx, `${secs}s`, 1230, 47, 'bold 16px system-ui, sans-serif', '#ffffff');
+}
 
-  function drawHintPulse(x, y, r, t) {
-    const alpha = 0.55 + 0.45 * Math.sin(t * 6);
-    context.strokeStyle = `rgba(255, 211, 77, ${alpha.toFixed(2)})`;
-    context.lineWidth = 5;
-    context.beginPath();
-    context.arc(x, y, r * (1 + 0.12 * Math.sin(t * 6)), 0, Math.PI * 2);
-    context.stroke();
+function drawFooter(ctx, game) {
+  ctx.fillStyle = '#1d2a38';
+  ctx.fillRect(0, PANEL_Y + PANEL_HEIGHT + 14, CANVAS_WIDTH, CANVAS_HEIGHT - PANEL_Y - PANEL_HEIGHT - 14);
+  const keys = 'Click a difference  ·  SPACE start  ·  H hint (−50)  ·  P pause  ·  M sound  ·  R restart';
+  text(ctx, keys, 20, CANVAS_HEIGHT - 62, '16px system-ui, sans-serif', '#bcd0de');
+  SCENES.forEach((scene, i) => {
+    const cx = 1120 + i * 48;
+    ctx.beginPath();
+    ctx.arc(cx, CANVAS_HEIGHT - 62, 9, 0, Math.PI * 2);
+    ctx.fillStyle = i < game.levelIndex || game.screen === SCREENS.WIN ? '#2f9e5f' : i === game.levelIndex ? '#ffd94d' : '#46586a';
+    ctx.fill();
+    text(ctx, String(i + 1), cx, CANVAS_HEIGHT - 61, 'bold 12px system-ui, sans-serif', '#101820', 'center');
+  });
+  text(ctx, game.muted ? 'SOUND OFF' : 'SOUND ON', 1120, CANVAS_HEIGHT - 30, '13px system-ui, sans-serif', '#8fa5b5');
+}
+
+function dim(ctx) {
+  ctx.fillStyle = 'rgba(12,20,28,0.72)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+}
+
+function card(ctx, w, h) {
+  const x = (CANVAS_WIDTH - w) / 2;
+  const y = (CANVAS_HEIGHT - h) / 2;
+  ctx.fillStyle = '#f6f1e6';
+  roundRect(ctx, x, y, w, h, 18);
+  ctx.fill();
+  ctx.strokeStyle = '#33414f';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  return { x, y };
+}
+
+function drawTitle(ctx, game) {
+  const scene = SCENES[0];
+  ctx.save();
+  roundRect(ctx, LEFT_PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, 14);
+  ctx.clip();
+  ctx.save();
+  ctx.translate(LEFT_PANEL_X, PANEL_Y);
+  scene.draw(ctx, false);
+  ctx.restore();
+  ctx.restore();
+  ctx.save();
+  roundRect(ctx, RIGHT_PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, 14);
+  ctx.clip();
+  ctx.save();
+  ctx.translate(RIGHT_PANEL_X, PANEL_Y);
+  scene.draw(ctx, true);
+  ctx.restore();
+  ctx.restore();
+  ctx.fillStyle = 'rgba(12,20,28,0.45)';
+  ctx.fillRect(0, PANEL_Y, CANVAS_WIDTH, PANEL_HEIGHT);
+  const { x, y } = card(ctx, 640, 470);
+  text(ctx, 'MORNING HARBOR', x + 320, y + 62, 'bold 46px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, 'Spot the Difference', x + 320, y + 112, 'bold 26px system-ui, sans-serif', '#c94f42', 'center');
+  text(ctx, 'Two pictures. Seven differences. Find them all', x + 320, y + 158, '18px system-ui, sans-serif', '#33414f', 'center');
+  text(ctx, 'before the clock runs out.', x + 320, y + 184, '18px system-ui, sans-serif', '#33414f', 'center');
+  text(ctx, '3 scenes  ·  7 differences each  ·  120 seconds a scene', x + 320, y + 228, 'bold 17px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, 'Find +100, combo +25 a step  ·  Miss −25 and −3s  ·  Hint −50', x + 320, y + 258, '16px system-ui, sans-serif', '#5a6b7a', 'center');
+  text(ctx, 'Click with the mouse, or use the keys below.', x + 320, y + 288, '16px system-ui, sans-serif', '#5a6b7a', 'center');
+  ctx.fillStyle = '#1d2a38';
+  roundRect(ctx, x + 170, y + 318, 300, 54, 12);
+  ctx.fill();
+  text(ctx, 'SPACE  or  CLICK  to start', x + 320, y + 346, 'bold 19px system-ui, sans-serif', '#ffd94d', 'center');
+  text(ctx, game.best > 0 ? `Best score: ${game.best}` : 'No best score yet — be the first.', x + 320, y + 408, '17px system-ui, sans-serif', '#33414f', 'center');
+  text(ctx, 'H hint   P pause   M sound   R restart', x + 320, y + 440, '15px system-ui, sans-serif', '#8fa5b5', 'center');
+}
+
+function drawPause(ctx) {
+  dim(ctx);
+  const { x, y } = card(ctx, 460, 240);
+  text(ctx, 'PAUSED', x + 230, y + 74, 'bold 40px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, 'Take a breath. The clock is stopped.', x + 230, y + 128, '17px system-ui, sans-serif', '#33414f', 'center');
+  text(ctx, 'P or Esc to carry on  ·  R to restart', x + 230, y + 178, '16px system-ui, sans-serif', '#5a6b7a', 'center');
+}
+
+function drawLevelClear(ctx, game) {
+  dim(ctx);
+  const scene = currentScene(game);
+  const { x, y } = card(ctx, 560, 360);
+  text(ctx, 'Scene Clear!', x + 280, y + 62, 'bold 40px system-ui, sans-serif', '#2f9e5f', 'center');
+  text(ctx, scene.name, x + 280, y + 106, 'bold 20px system-ui, sans-serif', '#33414f', 'center');
+  text(ctx, `Finds  +${game.levelFinds}`, x + 280, y + 158, '20px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, `Time bonus  +${game.levelBonus}  (${Math.ceil(game.timeLeft)}s left × 10)`, x + 280, y + 192, '20px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, `Scene total  ${game.levelFinds + game.levelBonus}`, x + 280, y + 226, 'bold 22px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, `Score so far  ${game.score}`, x + 280, y + 260, '20px system-ui, sans-serif', '#33414f', 'center');
+  const next = game.levelIndex + 1 < SCENES.length ? `SPACE for ${SCENES[game.levelIndex + 1].name}` : 'SPACE for the results';
+  text(ctx, next, x + 280, y + 312, 'bold 18px system-ui, sans-serif', '#c94f42', 'center');
+}
+
+function drawWin(ctx, game) {
+  dim(ctx);
+  const { x, y } = card(ctx, 620, 470);
+  text(ctx, 'You found them all!', x + 310, y + 58, 'bold 40px system-ui, sans-serif', '#2f9e5f', 'center');
+  text(ctx, 'Three scenes, twenty-one differences —', x + 310, y + 104, '18px system-ui, sans-serif', '#33414f', 'center');
+  text(ctx, 'every difference spotted.', x + 310, y + 130, '18px system-ui, sans-serif', '#33414f', 'center');
+  SCENES.forEach((scene, i) => {
+    text(ctx, `${scene.name}   ${game.levelTotals[i] ?? 0}`, x + 310, y + 178 + i * 34, '20px system-ui, sans-serif', '#1d2a38', 'center');
+  });
+  text(ctx, `TOTAL  ${game.score}`, x + 310, y + 296, 'bold 30px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, game.score >= game.best && game.score > 0 ? `★ New best: ${game.best} ★` : `Best: ${game.best}`, x + 310, y + 338, 'bold 19px system-ui, sans-serif', '#c94f42', 'center');
+  text(ctx, `Best combo x${game.bestCombo}`, x + 310, y + 370, '17px system-ui, sans-serif', '#5a6b7a', 'center');
+  text(ctx, 'SPACE or R to play again', x + 310, y + 420, 'bold 18px system-ui, sans-serif', '#1d2a38', 'center');
+}
+
+function drawTimeout(ctx, game) {
+  dim(ctx);
+  const scene = currentScene(game);
+  const { x, y } = card(ctx, 560, 340);
+  text(ctx, "Time's up!", x + 280, y + 62, 'bold 40px system-ui, sans-serif', '#c94f42', 'center');
+  text(ctx, `${scene.name} — you found ${foundCount(game)} of ${DIFFERENCES_PER_LEVEL}`, x + 280, y + 112, '19px system-ui, sans-serif', '#33414f', 'center');
+  text(ctx, `Score  ${game.score}`, x + 280, y + 158, 'bold 24px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, `Best  ${game.best}`, x + 280, y + 194, '18px system-ui, sans-serif', '#5a6b7a', 'center');
+  text(ctx, 'SPACE or R to try again', x + 280, y + 258, 'bold 18px system-ui, sans-serif', '#1d2a38', 'center');
+  text(ctx, 'Tip: use H for a hint before the clock runs dry.', x + 280, y + 292, '16px system-ui, sans-serif', '#5a6b7a', 'center');
+}
+
+export function drawGame(ctx, game, now) {
+  ctx.fillStyle = '#101820';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  if (game.screen === SCREENS.TITLE) {
+    drawTitle(ctx, game);
+    drawFooter(ctx, game);
+    return;
   }
-
-  function drawPanel(state, side) {
-    const ox = side === 0 ? PANEL.leftX : PANEL.rightX;
-    const oy = PANEL.top;
-    context.save();
-    context.translate(ox, oy);
-    // Frame and the scene itself.
-    context.fillStyle = PALETTE.panelFrame;
-    context.fillRect(-4, -4, PANEL.width + 8, PANEL.height + 8);
-    context.save();
-    context.beginPath();
-    context.rect(0, 0, PANEL.width, PANEL.height);
-    context.clip();
-    SCENES[state.level](context, side);
-    context.restore();
-    // Found markers and the hint pulse, on both panels alike.
-    const diffs = DIFFS[state.level];
-    for (let i = 0; i < diffs.length; i += 1) {
-      if (!state.found.has(i)) continue;
-      const pulse = state.recentFind === i ? state.elapsed - state.recentFindAt : 0;
-      drawMarker(diffs[i].x, diffs[i].y, diffs[i].r, state.recentFind === i && pulse < 1 ? pulse : 0);
-    }
-    if (state.hintPulse !== null && state.elapsed < state.hintPulseUntil) {
-      const d = diffs[state.hintPulse];
-      drawHintPulse(d.x, d.y, d.r, state.elapsed);
-    }
-    // A wrong click flashes a red X where it landed.
-    if (state.wrongFlash !== null && state.elapsed - state.wrongFlash.at < 0.6) {
-      const f = state.wrongFlash;
-      const a = 1 - (state.elapsed - f.at) / 0.6;
-      context.strokeStyle = `rgba(255, 107, 94, ${a.toFixed(2)})`;
-      context.lineWidth = 5;
-      context.lineCap = 'round';
-      context.beginPath();
-      context.moveTo(f.x - 14, f.y - 14);
-      context.lineTo(f.x + 14, f.y + 14);
-      context.moveTo(f.x + 14, f.y - 14);
-      context.lineTo(f.x - 14, f.y + 14);
-      context.stroke();
-    }
-    // The panel's label tab.
-    context.fillStyle = 'rgba(15, 20, 32, 0.85)';
-    context.fillRect(0, 0, side === 0 ? 190 : 250, 30);
-    text(side === 0 ? 'LEFT · ORIGINAL' : 'RIGHT · FIND THE CHANGES', 10, 7, 16, PALETTE.text, 'left', 'bold ');
-    context.restore();
-  }
-
-  function drawHud(state) {
-    context.fillStyle = PALETTE.hud;
-    context.fillRect(0, 0, FIELD.width, HUD.height);
-    text('TWIN LANTERNS', 20, 16, 26, PALETTE.gold, 'left', 'bold ');
-    text('SPOT THE DIFFERENCE', 20, 44, 12, PALETTE.muted, 'left');
-    const remain = DIFFS[state.level].length - state.found.size;
-    const mm = Math.floor(state.timeLeft / 60);
-    const ss = Math.floor(state.timeLeft % 60).toString().padStart(2, '0');
-    text(`REMAINING  ${remain}`, 560, 12, 30, remain === 0 ? PALETTE.green : PALETTE.text, 'center', 'bold ');
-    text(`LEVEL ${state.level + 1} / ${LEVELS.length} · ${LEVELS[state.level].name} · ${mm}:${ss}`, 560, 44, 13, PALETTE.muted, 'center');
-    text(`SCORE  ${state.score}`, 1260, 12, 26, PALETTE.text, 'right', 'bold ');
-    text(state.combo > 1 ? `COMBO x${state.combo}` : 'BEST  ' + state.best, 1260, 42, 13, state.combo > 1 ? PALETTE.gold : PALETTE.muted, 'right');
-    // The timer bar, green to red as it runs out.
-    const frac = Math.max(0, state.timeLeft / LEVELS[state.level].time);
-    context.fillStyle = '#0f1420';
-    context.fillRect(20, 66, 1240, 6);
-    context.fillStyle = frac > 0.5 ? PALETTE.green : frac > 0.25 ? PALETTE.amber : PALETTE.red;
-    context.fillRect(20, 66, 1240 * frac, 6);
-  }
-
-  function drawBar(state) {
-    context.fillStyle = PALETTE.hud;
-    context.fillRect(0, BAR.top, FIELD.width, BAR.height);
-    // Level pills.
-    LEVELS.forEach((level, i) => {
-      const x = 20 + i * 150;
-      const done = i < state.level || (i === state.level && state.screen === SCREEN_WIN);
-      const current = i === state.level && state.screen !== SCREEN_WIN;
-      context.fillStyle = done ? PALETTE.green : current ? PALETTE.gold : PALETTE.button;
-      roundRect(x, 656, 138, 36, 8);
-      context.fill();
-      text(`${i + 1} · ${level.name}`, x + 69, 665, 14, done || current ? '#141821' : PALETTE.text, 'center', 'bold ');
-    });
-    // The message line: only while playing or on the title screen; the overlays of the
-    // other screens carry their own words, and a stale find message would linger under them.
-    const showMessage = (state.screen === SCREEN_PLAY || state.screen === SCREEN_TITLE) && state.elapsed < state.messageUntil;
-    if (showMessage) text(state.message, 480, 662, 16, PALETTE.text, 'left');
-    // Buttons.
-    for (const [name, b] of Object.entries(BUTTONS)) {
-      context.fillStyle = PALETTE.button;
-      roundRect(b.x, b.y, b.w, b.h, 8);
-      context.fill();
-      context.strokeStyle = PALETTE.buttonEdge;
-      context.lineWidth = 1;
-      context.stroke();
-      let label = b.label;
-      if (name === 'hint') label = `Hint (${state.hintsLeft})`;
-      if (name === 'sound') label = 'Sound: on';
-      text(label, b.x + b.w / 2, b.y + 13, 15, PALETTE.text, 'center');
-    }
-  }
-
-  function drawOverlayPanel(title, lines, prompt, accent) {
-    context.fillStyle = 'rgba(10, 14, 22, 0.72)';
-    context.fillRect(0, 0, FIELD.width, FIELD.height);
-    const w = 620;
-    const h = 150 + lines.length * 34;
-    const x = (FIELD.width - w) / 2;
-    const y = (FIELD.height - h) / 2;
-    context.fillStyle = PALETTE.hud;
-    roundRect(x, y, w, h, 14);
-    context.fill();
-    context.strokeStyle = accent ?? PALETTE.gold;
-    context.lineWidth = 3;
-    context.stroke();
-    text(title, FIELD.width / 2, y + 26, 34, accent ?? PALETTE.gold, 'center', 'bold ');
-    lines.forEach((lineText, i) => text(lineText, FIELD.width / 2, y + 82 + i * 34, 19, PALETTE.text, 'center'));
-    if (prompt) text(prompt, FIELD.width / 2, y + h - 40, 16, PALETTE.muted, 'center');
-  }
-
-  function draw(state, audio) {
-    resize();
-    context.setTransform(view.scale, 0, 0, view.scale, view.x, view.y);
-    context.fillStyle = PALETTE.backdrop;
-    context.fillRect(0, 0, FIELD.width, FIELD.height);
-    drawHud(state);
-    drawPanel(state, 0);
-    drawPanel(state, 1);
-    drawBar(state);
-    // The sound button shows the real mute state.
-    if (audio !== undefined) {
-      context.fillStyle = PALETTE.button;
-      roundRect(BUTTONS.sound.x, BUTTONS.sound.y, BUTTONS.sound.w, BUTTONS.sound.h, 8);
-      context.fill();
-      context.strokeStyle = PALETTE.buttonEdge;
-      context.lineWidth = 1;
-      context.stroke();
-      text(audio.muted ? 'Sound: off' : 'Sound: on', BUTTONS.sound.x + BUTTONS.sound.w / 2, BUTTONS.sound.y + 13, 15, PALETTE.text, 'center');
-    }
-
-    if (state.screen === SCREEN_TITLE) {
-      drawOverlayPanel('TWIN LANTERNS', [
-        'Two pictures. Seven differences. Find them all.',
-        'Click a difference on either panel — a wrong click costs',
-        '25 points and 3 seconds. H gives a hint (3 per level).',
-        'Three scenes: Harbor at Dawn, Forest Camp, Clockwork Attic.',
-      ], 'Click or press Space to play  ·  H hint  ·  P pause  ·  M sound');
-    } else if (state.screen === SCREEN_PAUSED) {
-      drawOverlayPanel('PAUSED', [
-        `${DIFFS[state.level].length - state.found.size} differences still hidden in ${LEVELS[state.level].name}.`,
-        `Score ${state.score} · ${Math.ceil(state.timeLeft)}s left on the clock.`,
-      ], 'Press P or click to keep hunting');
-    } else if (state.screen === SCREEN_LEVEL) {
-      drawOverlayPanel(`LEVEL ${state.level + 1} CLEAR!`, [
-        `All ${DIFFS[state.level].length} differences found in ${LEVELS[state.level].name}.`,
-        `Time bonus +${state.levelBonus}  ·  Score ${state.score}`,
-        `Next: ${LEVELS[state.level + 1].name} — ${DIFFS_PER_LEVEL} more differences, trickier ones.`,
-      ], 'Click or press Space for the next level');
-    } else if (state.screen === SCREEN_WIN) {
-      drawOverlayPanel('YOU FOUND THEM ALL!', [
-        `All ${DIFFS[state.level].length * LEVELS.length} differences across three scenes.`,
-        `Final score ${state.score}  ·  Best combo x${state.bestCombo}  ·  Best ${Math.max(state.best, state.score)}`,
-      ], 'Press R or click to play again');
-    } else if (state.screen === SCREEN_OVER) {
-      drawOverlayPanel("TIME'S UP", [
-        `The clock ran out on ${LEVELS[state.level].name}.`,
-        `${state.totalFound} differences found  ·  Score ${state.score}`,
-      ], 'Press R or click to try again');
-    }
-    void SCREEN_PLAY;
-  }
-
-  return { draw, resize };
+  drawHud(ctx, game);
+  drawPanel(ctx, game, LEFT_PANEL_X, false, now);
+  drawPanel(ctx, game, RIGHT_PANEL_X, true, now);
+  drawFooter(ctx, game);
+  if (game.screen === SCREENS.PAUSE) drawPause(ctx);
+  else if (game.screen === SCREENS.LEVEL) drawLevelClear(ctx, game);
+  else if (game.screen === SCREENS.WIN) drawWin(ctx, game);
+  else if (game.screen === SCREENS.TIMEOUT) drawTimeout(ctx, game);
 }

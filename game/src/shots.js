@@ -1,64 +1,61 @@
-// The screenshot scenes behind ?shot=play|start|level2|end. Each one stages a real game
-// state — no mock pixels: the panels are the game's own scenes, the markers are the game's
-// own found-difference rings, and the counter, timer and score are the game's own HUD.
-// The same seed always gives the same frame.
-import { SCREEN_LEVEL, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './world.js';
+// Morning Harbor — Spot the Difference.
+// shots.js: the four staged frames the screenshots are taken from. Each
+// one is a state the live game can really reach — the numbers below are
+// worked out from the scoring rules in state.js, not typed in by feel:
+//
+//   find pays 100 + 25 * (combo - 1): 100, 125, 150, 175, 200, 225, 250.
+//   Seven clean finds = 1225. Level bonus = seconds left x 10.
+//
+//   play   — scene 1, 3 finds in a row: 100 + 125 + 150 = 375.
+//            4 differences still to find, 108s left, combo x3.
+//   level2 — scene 1 cleared with 86s left: 1225 + 86 x 10 = 2085.
+//            Scene 2, 5 finds in a row: 100+125+150+175+200 = 750.
+//            Total 2085 + 750 = 2835, 97s left, combo x5, 2 left to find.
+//   win    — scene 2 cleared with 74s left: 1225 + 74 x 10 = 1965.
+//            Scene 3 cleared with 91s left: 1225 + 91 x 10 = 2135.
+//            Total 2085 + 1965 + 2135 = 6185, the new best score.
+//   title  — the fresh title screen, best 0, no game in progress.
+//
+// The frames are rendered by the game's own renderer, and the clock is
+// frozen while a shot is staged, so the same shot always looks the same.
 
-function stageLevel(world, level, foundIds, score, timeLeft) {
-  world.resetLevel(level);
-  world.state.screen = SCREEN_PLAY;
-  world.state.score = score;
-  world.state.timeLeft = timeLeft;
-  for (const id of foundIds) world.state.found.add(id);
-  world.state.totalFound = foundIds.length;
-  world.state.combo = foundIds.length;
-  world.state.bestCombo = Math.max(world.state.bestCombo, foundIds.length);
-  world.state.recentFind = foundIds.length > 0 ? foundIds[foundIds.length - 1] : -1;
-  world.state.recentFindAt = 0;
-  world.state.elapsed = 1;
-  return world.state;
+import { SCREENS } from './config.js';
+import { SCENES } from './scenes.js';
+import { createGame } from './state.js';
+
+function stageLevel(game, levelIndex, foundIds, score, combo, timeLeft, levelStartScore, levelFinds, levelTotals) {
+  game.levelIndex = levelIndex;
+  game.found = new Set(foundIds);
+  game.score = score;
+  game.combo = combo;
+  game.bestCombo = combo;
+  game.timeLeft = timeLeft;
+  game.hintsLeft = 3;
+  game.levelStartScore = levelStartScore;
+  game.levelFinds = levelFinds;
+  game.levelTotals = levelTotals;
+  game.screen = SCREENS.PLAY;
 }
 
-/**
- * Set `world` to the named scene and return the screen to draw. Unknown names are the
- * title scene. The shots, in the order the files are named:
- *  play   — level 1 mid-hunt: 3 found (ringed), 4 still hidden, counter on 4;
- *  start  — the title screen over the untouched harbor scene;
- *  level2 — level 2 mid-hunt: 2 found, 5 hidden, a second scene on show;
- *  end    — the win screen: all three scenes cleared, every difference ringed.
- */
-export function stageShot(name, world) {
+export function stageShot(name) {
+  const game = createGame();
   if (name === 'play') {
-    const state = stageLevel(world, 0, [0, 2, 5], 375, 118);
-    state.message = 'Found the jumping fish! +150 (combo x3) — 4 to go.';
-    state.messageUntil = 999;
-    return { screen: SCREEN_PLAY };
+    const ids = SCENES[0].diffs.slice(0, 3).map((d) => d.id);
+    stageLevel(game, 0, ids, 375, 3, 108, 0, 375, []);
+    return game;
   }
   if (name === 'level2') {
-    const state = stageLevel(world, 1, [1, 4], 2090, 96);
-    state.message = 'Found an extra log! +125 (combo x2) — 5 to go.';
-    state.messageUntil = 999;
-    return { screen: SCREEN_PLAY };
+    const ids = SCENES[1].diffs.slice(0, 5).map((d) => d.id);
+    stageLevel(game, 1, ids, 2835, 5, 97, 2085, 750, [2085]);
+    return game;
   }
-  if (name === 'end') {
-    const state = stageLevel(world, 2, [0, 1, 2, 3, 4, 5, 6], 5695, 42);
-    state.totalFound = 21;
-    state.bestCombo = 7;
-    state.best = 5695;
-    state.message = 'All 21 differences found — three scenes cleared!';
-    state.messageUntil = 999;
-    state.screen = SCREEN_WIN;
-    return { screen: SCREEN_WIN };
+  if (name === 'win') {
+    const ids = SCENES[2].diffs.map((d) => d.id);
+    stageLevel(game, 2, ids, 6185, 7, 91, 4050, 1225, [2085, 1965, 2135]);
+    game.levelBonus = 910;
+    game.best = 6185;
+    game.screen = SCREENS.WIN;
+    return game;
   }
-  if (name === 'level') {
-    const state = stageLevel(world, 0, [0, 1, 2, 3, 4, 5, 6], 1865, 64);
-    state.levelBonus = 640;
-    state.totalFound = 7;
-    state.screen = SCREEN_LEVEL;
-    return { screen: SCREEN_LEVEL };
-  }
-  world.reset();
-  world.state.screen = SCREEN_TITLE;
-  world.state.elapsed = 1;
-  return { screen: SCREEN_TITLE };
+  return game;
 }

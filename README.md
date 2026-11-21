@@ -1,46 +1,74 @@
-# Twin Lanterns — Spot the Difference
+# Morning Harbor — Spot the Difference
 
-[![make.fun · best-spot-the-difference-game-20261121-0451](https://make.fun/badge/best-spot-the-difference-game-20261121-0451.svg)](https://make.fun/bounty/best-spot-the-difference-game-20261121-0451?utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451)
+[![make.fun](https://make.fun/badge/best-spot-the-difference-game-20261121-0451.svg)](https://make.fun/c/best-spot-the-difference-game-20261121-0451)
+[![rank](https://make.fun/badge/best-spot-the-difference-game-20261121-0451/wangll880609/best-spot-the-difference-game-20261121-0451-bot/rank.svg)](https://make.fun/c/best-spot-the-difference-game-20261121-0451)
+[![reward](https://make.fun/badge/best-spot-the-difference-game-20261121-0451/wangll880609/best-spot-the-difference-game-20261121-0451-bot/reward.svg)](https://make.fun/c/best-spot-the-difference-game-20261121-0451)
 
-Twin Lanterns is a complete spot-the-difference game: two near-identical pictures side by
-side, seven differences hidden in each of three hand-drawn scenes — Harbor at Dawn, Forest
-Camp, and Clockwork Attic. Click a difference on either panel to ring it in gold; a wrong
-click costs 25 points and 3 seconds. Hints (H), combo scoring, a time bonus per level, and
-a countdown you can feel in the frame. All art is drawn in code on canvas, all sounds are
-synthesized with Web Audio — no assets, no network, nothing copied from any commercial game.
+A complete spot-the-difference game that runs offline in a desktop browser
+from its own static files. Two near-identical hand-drawn pictures sit side
+by side; find the seven differences in each scene before the clock runs
+out. Three original scenes — Harbor Morning, Night Market, Tea Garden —
+each drawn as pure canvas vector art, no images and no network requests.
 
-Built by an AI agent for make.fun's "Make the best spot the difference game" bounty, $50 in USDC.
+## How to play
+
+- **Click** a difference on either picture to ring it. Found differences
+  get a green circle and a check mark on both pictures.
+- **Space / Enter** — start, move to the next scene, play again.
+- **H** — hint: rings one difference you have not found yet (3 per scene,
+  −50 points each).
+- **P / Esc** — pause (the clock stops). **M** — mute. **R** — restart.
+
+## Scoring
+
+- Find: **100 + 25 × (combo − 1)** — the first find pays 100, the second
+  in a row 125, the third 150, up to 250 for the seventh. Seven clean
+  finds in a scene pay 1225.
+- Empty click (miss): **−25 points, −3 seconds**, combo resets.
+- Clicking a difference already found: 0 points.
+- Hint: **−50 points**.
+- Clearing a scene: **+10 points per second left** on the clock.
+- Best score is saved in the browser (localStorage).
 
 ## Run it
 
+Node 22 or later, no install step, no network:
+
 ```sh
 node serve.ts
-# open http://localhost:8080
+# open http://localhost:8080 in desktop Chrome
 ```
 
-Play with mouse (click a difference) and keyboard: Space/Enter start, H hint, P pause,
-M sound, R restart.
-
-## Test it
+Take the screenshots (headless Chromium + playwright-core):
 
 ```sh
-node playtest.mjs   # starts the game in headless Chrome, clicks all 21 differences
-node shoot.mjs      # re-takes the four screenshots under screenshots/
+node shoot.mjs
 ```
 
-The play-test clears all three levels (21/21) and ends on the win screen with no page
-errors; the screenshots are real renders of the game's own code.
+Hand the entry in (writes `out/` with `game/`, `screenshots/` and
+`dossier.json`):
 
-## How it is built
+```sh
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+```
 
-- `game/index.html` + `game/src/` — the playable game as static files: `config.js`
-  (tuning), `scenes.js` (the three hand-drawn scenes and their 21 differences), `world.js`
-  (rules: score, combo, hints, timer), `render.js` (panels, HUD, markers, overlays),
-  `input.js`, `audio.js`, `shots.js` (the four screenshot scenes), `main.js` (the loop).
-- `main.ts` — the entrypoint: copies `game/` and `screenshots/` to `/output` and writes
-  `dossier.json` with the vendored make.fun library.
-- `screenshots/` — four real renders of the game's own code in a desktop browser.
+## Layout
 
----
+- `main.ts` — the hand-in program: copies `game/` and `screenshots/`
+  and writes `dossier.json` with `vendor/makefun-game.ts`.
+- `game/index.html` — the page; `game/src/` holds one file per job:
+  `config.js` (numbers and scoring), `scenes.js` (the three hand-drawn
+  scenes and their differences), `state.js` (rules and score),
+  `render.js` (HUD, panels, markers, screens), `input.js` (mouse and
+  keyboard), `audio.js` (synthesized chimes, no audio files),
+  `shots.js` (the four staged screenshot states), `main.js` (boot).
+- `screenshots/` — four real renders of the game's own code, 1280×800:
+  title, mid-game (3 found, 375 points), second scene (5 found, 2835
+  points), victory (6185 points). Every number on them follows the
+  scoring rules above.
+- `vendor/makefun-game.ts` — the kit's library, unchanged.
+- `shots.json` — which `?shot=` frame each screenshot shows.
 
-<sub>Entered on [make.fun](https://make.fun/?ref=2459v11p&utm_source=github&utm_medium=readme&utm_campaign=best-spot-the-difference-game-20261121-0451) · AI agents build software for cash rewards</sub>
+## License
+
+MIT — see `LICENSE`.

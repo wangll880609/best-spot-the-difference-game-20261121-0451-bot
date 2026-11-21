@@ -1,23 +1,23 @@
-// The three scenes, drawn entirely with canvas vector art (no image assets, no network).
-// Each scene is drawn twice: variant 0 is the left "original" panel, variant 1 the right panel
-// with exactly seven differences. A difference lives at one spot in panel coordinates
-// (a 600x560 box); the DIFFS lists give that spot, its radius and a short label.
-//
-// The art is hand-placed and deterministic: decorative scatter (stars, sparks) comes from a
-// seeded generator, so the same level always paints the same picture.
-import { createRandom } from './random.js';
+// Morning Harbor — Spot the Difference.
+// scenes.js: the three hand-drawn scenes. Each scene draws the same picture
+// twice (left panel, then right panel with `variant` true) and lists its
+// seven differences as { id, x, y, r, label } in the 610 x 600 panel space.
+// Every difference is drawn by the scene itself at exactly the coordinates
+// listed, so a click on the drawn change is a click on the listed spot.
+// No images, no network: every shape is a canvas path.
 
-function circle(ctx, x, y, r, fill) {
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
+function sky(ctx, top, bottom) {
+  const g = ctx.createLinearGradient(0, 0, 0, 360);
+  g.addColorStop(0, top);
+  g.addColorStop(1, bottom);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 610, 360);
 }
 
-function ellipse(ctx, x, y, rx, ry, fill) {
-  ctx.fillStyle = fill;
+function circle(ctx, x, y, r, fill) {
   ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
   ctx.fill();
 }
 
@@ -27,392 +27,370 @@ function rect(ctx, x, y, w, h, fill) {
 }
 
 function poly(ctx, points, fill) {
-  ctx.fillStyle = fill;
   ctx.beginPath();
   ctx.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i += 1) ctx.lineTo(points[i][0], points[i][1]);
   ctx.closePath();
+  ctx.fillStyle = fill;
   ctx.fill();
 }
 
-function line(ctx, x1, y1, x2, y2, color, width) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
+function cloud(ctx, x, y, s, fill) {
+  circle(ctx, x, y, 22 * s, fill);
+  circle(ctx, x + 24 * s, y - 8 * s, 26 * s, fill);
+  circle(ctx, x + 52 * s, y, 20 * s, fill);
+  rect(ctx, x - 20 * s, y, 92 * s, 18 * s, fill);
 }
 
-function cloud(ctx, x, y, s, color) {
-  ctx.fillStyle = color;
+function gull(ctx, x, y, stroke) {
   ctx.beginPath();
-  ctx.arc(x, y, 18 * s, 0, Math.PI * 2);
-  ctx.arc(x + 20 * s, y - 8 * s, 22 * s, 0, Math.PI * 2);
-  ctx.arc(x + 42 * s, y, 18 * s, 0, Math.PI * 2);
-  ctx.arc(x + 20 * s, y + 8 * s, 20 * s, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function gull(ctx, x, y, color) {
-  ctx.strokeStyle = color;
+  ctx.moveTo(x - 14, y);
+  ctx.quadraticCurveTo(x - 6, y - 10, x, y);
+  ctx.quadraticCurveTo(x + 6, y - 10, x + 14, y);
+  ctx.strokeStyle = stroke;
   ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x - 12, y);
-  ctx.quadraticCurveTo(x - 5, y - 8, x, y);
-  ctx.quadraticCurveTo(x + 5, y - 8, x + 12, y);
   ctx.stroke();
 }
 
-function pine(ctx, x, baseY, h, color) {
-  ctx.fillStyle = color;
-  const w = h * 0.42;
-  for (let tier = 0; tier < 3; tier += 1) {
-    const ty = baseY - h + tier * (h / 3.4);
-    const tw = w * (0.45 + tier * 0.28);
-    poly(ctx, [[x - tw, ty + h / 3.2], [x, ty], [x + tw, ty + h / 3.2]], color);
-  }
-  rect(ctx, x - 5, baseY - 8, 10, 10, '#4a3220');
-}
-
-// ---------------------------------------------------------------- level 1: harbor
-function drawHarbor(ctx, v) {
-  // Dawn sky and sea.
-  const sky = ctx.createLinearGradient(0, 0, 0, 300);
-  sky.addColorStop(0, '#ffe0ae');
-  sky.addColorStop(0.55, '#ffb37a');
-  sky.addColorStop(1, '#9fd8e8');
-  rect(ctx, 0, 0, 600, 300, sky);
-  const sea = ctx.createLinearGradient(0, 300, 0, 560);
-  sea.addColorStop(0, '#2f7d9c');
-  sea.addColorStop(1, '#17455e');
-  rect(ctx, 0, 300, 600, 260, sea);
-  // Sun shimmer on the water.
-  ctx.fillStyle = 'rgba(255, 220, 150, 0.35)';
-  for (let i = 0; i < 5; i += 1) rect(ctx, 440 - i * 6, 312 + i * 44, 60 + i * 14, 5, 'rgba(255, 220, 150, 0.35)');
-  // Sun (rays only in the original).
-  circle(ctx, 470, 105, 52, 'rgba(255, 236, 170, 0.35)');
-  circle(ctx, 470, 105, 40, '#fff2b0');
-  if (v === 0) {
-    ctx.strokeStyle = '#ffd34d';
+// ---------------------------------------------------------------------------
+// Scene 1 — Harbor Morning. Sun, lighthouse, sailboat, gulls, dock, buoy.
+// ---------------------------------------------------------------------------
+function drawHarbor(ctx, variant) {
+  sky(ctx, '#8ec9ee', '#d9eefb');
+  // Sun, top left. Difference 1: the right picture's sun has no rays.
+  circle(ctx, 92, 82, 34, '#ffd94d');
+  if (!variant) {
+    ctx.strokeStyle = '#f2b705';
     ctx.lineWidth = 5;
     for (let i = 0; i < 8; i += 1) {
-      const a = (i / 8) * Math.PI * 2;
-      line(ctx, 470 + Math.cos(a) * 48, 105 + Math.sin(a) * 48, 470 + Math.cos(a) * 62, 105 + Math.sin(a) * 62, '#ffd34d', 5);
+      const a = (i * Math.PI) / 4;
+      ctx.beginPath();
+      ctx.moveTo(92 + Math.cos(a) * 44, 82 + Math.sin(a) * 44);
+      ctx.lineTo(92 + Math.cos(a) * 58, 82 + Math.sin(a) * 58);
+      ctx.stroke();
     }
   }
-  cloud(ctx, 110, 70, 1, 'rgba(255, 250, 240, 0.9)');
-  cloud(ctx, 300, 48, 0.8, 'rgba(255, 250, 240, 0.85)');
-  cloud(ctx, 520, 185, 0.7, 'rgba(255, 250, 240, 0.7)');
-  gull(ctx, 200, 90, '#3a3f4a');
-  gull(ctx, 330, 68, '#3a3f4a');
-  if (v === 0) gull(ctx, 430, 95, '#3a3f4a');
-  // Distant headland.
-  poly(ctx, [[500, 300], [560, 262], [600, 285], [600, 300]], '#5d7d8c');
-  // Lighthouse on its rock.
-  poly(ctx, [[48, 300], [150, 300], [132, 268], [66, 268]], '#6b5b4a');
-  rect(ctx, 78, 168, 44, 104, '#f4ede0');
-  rect(ctx, 78, 196, 44, 14, '#d94f3d');
-  rect(ctx, 78, 238, 44, 14, '#d94f3d');
-  rect(ctx, 72, 156, 56, 12, '#3a3f4a');
-  circle(ctx, 100, 142, 14, '#ffe9a8');
-  rect(ctx, 88, 128, 24, 14, '#3a3f4a');
-  // Lighthouse window: lit in the original, dark in the changed panel.
-  rect(ctx, 92, 205, 16, 20, v === 0 ? '#ffd34d' : '#2c3547');
-  // Soft light beam.
-  ctx.fillStyle = 'rgba(255, 233, 168, 0.18)';
-  poly(ctx, [[112, 142], [300, 118], [300, 168], [112, 150]], 'rgba(255, 233, 168, 0.18)');
-  // Wooden pier and crates.
-  rect(ctx, 0, 470, 230, 90, '#7a5a38');
-  for (let x = 0; x < 230; x += 46) line(ctx, x, 470, x, 560, '#5d4226', 3);
-  line(ctx, 0, 500, 230, 500, '#5d4226', 3);
-  line(ctx, 0, 530, 230, 530, '#5d4226', 3);
-  rect(ctx, 40, 428, 42, 42, '#a8763e');
-  line(ctx, 40, 449, 82, 449, '#7a5a38', 3);
-  rect(ctx, 92, 440, 34, 30, '#8f6534');
-  if (v === 1) { // one crate more in the changed panel
-    rect(ctx, 150, 452, 36, 36, '#a8763e');
-    line(ctx, 150, 470, 186, 470, '#7a5a38', 3);
-  }
-  // Lantern post on the pier: glowing in the original, dark in the changed panel.
-  line(ctx, 268, 470, 268, 386, '#2c3547', 6);
-  circle(ctx, 268, 382, 12, v === 0 ? '#ffd34d' : '#3a3f4a');
-  if (v === 0) circle(ctx, 268, 382, 22, 'rgba(255, 211, 77, 0.3)');
-  // Sailboat with a flag: red in the original, teal in the changed panel.
-  poly(ctx, [[352, 392], [418, 392], [404, 372], [366, 372]], '#8a4a2a');
-  line(ctx, 385, 372, 385, 272, '#4a3220', 5);
-  poly(ctx, [[385, 276], [385, 366], [428, 366]], '#f4ede0');
-  poly(ctx, [[385, 276], [412, 288], [385, 300]], v === 0 ? '#d94f3d' : '#2a9d8f');
-  // Rowboat and oar.
-  poly(ctx, [[168, 448], [228, 448], [214, 430], [182, 430]], '#6b4a2f');
-  line(ctx, 210, 432, 244, 414, '#4a3220', 4);
-  // A fish jumping out of the sea (original only).
-  if (v === 0) {
-    ctx.strokeStyle = '#cfe8ef';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.arc(520, 396, 16, Math.PI, 0);
-    ctx.stroke();
-    ellipse(ctx, 520, 378, 10, 5, '#9fc6d4');
-  }
-  // Wave lines.
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  cloud(ctx, 210, 70, 1, '#ffffff');
+  cloud(ctx, 380, 120, 0.8, '#f4fafd');
+  // Three gulls. Difference 4: the right picture has only two.
+  gull(ctx, 250, 150, '#3a4a5a');
+  gull(ctx, 300, 112, '#3a4a5a');
+  if (!variant) gull(ctx, 345, 152, '#3a4a5a');
+  // Distant hills.
+  poly(ctx, [[0, 360], [120, 285], [260, 360]], '#7fae7a');
+  poly(ctx, [[180, 360], [330, 275], [470, 360]], '#6b9e6e');
+  // Sea.
+  const sea = ctx.createLinearGradient(0, 360, 0, 600);
+  sea.addColorStop(0, '#3d8fc4');
+  sea.addColorStop(1, '#1d5f8f');
+  ctx.fillStyle = sea;
+  ctx.fillRect(0, 360, 610, 240);
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
   ctx.lineWidth = 2;
-  for (const [x, y, w] of [[60, 330, 70], [250, 350, 90], [440, 330, 60], [120, 520, 80], [330, 520, 100]]) {
+  for (const [wx, wy, wl] of [[60, 420, 70], [300, 400, 90], [430, 520, 80], [120, 540, 90]]) {
     ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.quadraticCurveTo(x + w / 2, y - 6, x + w, y);
+    ctx.moveTo(wx, wy);
+    ctx.lineTo(wx + wl, wy);
     ctx.stroke();
   }
-}
-
-// ---------------------------------------------------------------- level 2: forest camp
-function drawCamp(ctx, v) {
-  const sky = ctx.createLinearGradient(0, 0, 0, 340);
-  sky.addColorStop(0, '#0c1a2c');
-  sky.addColorStop(1, '#1d3a4d');
-  rect(ctx, 0, 0, 600, 340, sky);
-  // Stars (one missing in the changed panel).
-  const rnd = createRandom(20261121);
-  ctx.fillStyle = '#e8f2ff';
-  for (let i = 0; i < 40; i += 1) {
-    const x = 20 + rnd() * 560;
-    const y = 14 + rnd() * 220;
-    const r = 1 + rnd() * 1.6;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  if (v === 0) circle(ctx, 200, 60, 3, '#ffffff');
-  // Moon (one crater missing in the changed panel).
-  circle(ctx, 480, 85, 46, 'rgba(244, 234, 208, 0.25)');
-  circle(ctx, 480, 85, 36, '#f4ead0');
-  circle(ctx, 468, 78, 6, '#d8c9a3');
-  if (v === 0) circle(ctx, 492, 96, 4, '#d8c9a3');
-  circle(ctx, 478, 104, 3, '#d8c9a3');
-  // Mountains and ground.
-  poly(ctx, [[0, 340], [140, 250], [260, 340]], '#12283a');
-  poly(ctx, [[220, 340], [380, 240], [540, 340]], '#0f2233');
-  poly(ctx, [[480, 340], [600, 260], [600, 340]], '#12283a');
-  const ground = ctx.createLinearGradient(0, 340, 0, 560);
-  ground.addColorStop(0, '#1e3d2f');
-  ground.addColorStop(1, '#122619');
-  rect(ctx, 0, 340, 600, 220, ground);
-  pine(ctx, 52, 430, 190, '#1d4a2e');
-  pine(ctx, 552, 420, 170, '#1a4229');
-  pine(ctx, 96, 440, 110, '#235636');
-  // Tent with a door flap: closed in the original, open in the changed panel.
-  poly(ctx, [[200, 420], [400, 420], [300, 282]], '#e8722a');
-  poly(ctx, [[200, 420], [400, 420], [300, 282]], 'rgba(0,0,0,0)');
-  line(ctx, 250, 351, 300, 282, '#c25a1d', 4);
-  line(ctx, 350, 351, 300, 282, '#c25a1d', 4);
-  if (v === 0) {
-    poly(ctx, [[282, 420], [318, 420], [300, 352]], '#c25a1d');
-  } else {
-    poly(ctx, [[282, 420], [318, 420], [300, 352]], '#241608');
-    poly(ctx, [[282, 420], [300, 352], [300, 420]], '#e8722a');
-  }
-  // Campfire: stones, logs (one log more in the changed panel), flames, glow.
-  circle(ctx, 300, 478, 60, 'rgba(255, 170, 60, 0.16)');
-  ellipse(ctx, 300, 478, 34, 10, '#6b5b4a');
-  line(ctx, 272, 470, 306, 486, '#6b4423', 8);
-  line(ctx, 328, 470, 294, 486, '#7a4e28', 8);
-  if (v === 1) line(ctx, 300, 462, 330, 484, '#5d3a1e', 8);
-  poly(ctx, [[300, 428], [282, 468], [318, 468]], '#ffb347');
-  poly(ctx, [[300, 442], [290, 468], [310, 468]], '#ff7b2f');
-  circle(ctx, 268, 482, 6, '#8a8f96');
-  circle(ctx, 332, 484, 6, '#8a8f96');
-  // Owl on a branch: eyes open in the original, closed in the changed panel.
-  line(ctx, 84, 196, 160, 186, '#4a3220', 7);
-  ellipse(ctx, 122, 178, 20, 26, '#7a5a38');
-  ellipse(ctx, 122, 196, 14, 10, '#8a6a44');
-  if (v === 0) {
-    circle(ctx, 114, 172, 5, '#ffffff');
-    circle(ctx, 130, 172, 5, '#ffffff');
-    circle(ctx, 114, 172, 2.5, '#141821');
-    circle(ctx, 130, 172, 2.5, '#141821');
-  } else {
-    line(ctx, 109, 172, 119, 172, '#141821', 2.5);
-    line(ctx, 125, 172, 135, 172, '#141821', 2.5);
-  }
-  poly(ctx, [[122, 180], [118, 186], [126, 186]], '#ffb347');
-  // Mushrooms: red caps in the original, purple in the changed panel.
-  const cap = v === 0 ? '#d94f3d' : '#8e6cc8';
-  ellipse(ctx, 448, 502, 16, 10, cap);
-  circle(ctx, 448, 494, 3, '#ffffff');
-  rect(ctx, 444, 500, 8, 12, '#f4ede0');
-  ellipse(ctx, 472, 508, 11, 7, cap);
-  rect(ctx, 469, 506, 6, 9, '#f4ede0');
-  // Backpack with a water bottle (original only).
-  poly(ctx, [[162, 520], [198, 520], [192, 478], [168, 478]], '#3f7a4a');
-  rect(ctx, 168, 478, 24, 10, '#2f5d38');
-  line(ctx, 172, 490, 188, 490, '#2f5d38', 3);
-  if (v === 0) {
-    rect(ctx, 200, 486, 10, 22, '#7ec8e3');
-    rect(ctx, 200, 482, 10, 5, '#2a6f8f');
-  }
-  // Grass tufts.
-  ctx.strokeStyle = '#2f6b43';
-  ctx.lineWidth = 2;
-  for (const [x, y] of [[40, 540], [240, 545], [420, 540], [540, 545], [120, 460], [500, 460]]) {
-    line(ctx, x, y, x - 4, y - 10, '#2f6b43', 2);
-    line(ctx, x + 4, y, x + 6, y - 12, '#2f6b43', 2);
-  }
-}
-
-// ---------------------------------------------------------------- level 3: clockwork attic
-function drawAttic(ctx, v) {
-  // Wooden wall and floor.
-  const wall = ctx.createLinearGradient(0, 0, 0, 440);
-  wall.addColorStop(0, '#7a5233');
-  wall.addColorStop(1, '#5d3d24');
-  rect(ctx, 0, 0, 600, 440, wall);
-  for (let y = 60; y < 440; y += 62) line(ctx, 0, y, 600, y, 'rgba(0,0,0,0.18)', 2);
-  rect(ctx, 0, 440, 600, 120, '#8a5f3c');
-  for (let x = 40; x < 600; x += 80) line(ctx, x, 440, x, 560, 'rgba(0,0,0,0.2)', 2);
-  line(ctx, 0, 440, 600, 440, '#4a3220', 4);
-  // Round window: a moon in the original, a star in the changed panel.
-  circle(ctx, 120, 115, 58, '#3a3f4a');
-  circle(ctx, 120, 115, 50, '#16233a');
-  if (v === 0) {
-    circle(ctx, 120, 115, 24, '#f4ead0');
-    circle(ctx, 112, 108, 4, '#d8c9a3');
-  } else {
-    ctx.fillStyle = '#ffd34d';
-    ctx.beginPath();
-    ctx.moveTo(120, 92);
-    ctx.quadraticCurveTo(126, 108, 142, 112);
-    ctx.quadraticCurveTo(126, 118, 120, 134);
-    ctx.quadraticCurveTo(114, 118, 98, 112);
-    ctx.quadraticCurveTo(114, 108, 120, 92);
-    ctx.fill();
-  }
-  // Wall clock: 3:00 in the original, 4:30 in the changed panel.
-  circle(ctx, 300, 110, 46, '#3a3f4a');
-  circle(ctx, 300, 110, 40, '#f4ede0');
-  for (let i = 0; i < 12; i += 1) {
-    const a = (i / 12) * Math.PI * 2;
-    circle(ctx, 300 + Math.cos(a) * 33, 110 + Math.sin(a) * 33, 2, '#3a3f4a');
-  }
-  if (v === 0) {
-    line(ctx, 300, 110, 300, 82, '#141821', 4);
-    line(ctx, 300, 110, 326, 110, '#141821', 4);
-  } else {
-    line(ctx, 300, 110, 318, 128, '#141821', 4);
-    line(ctx, 300, 110, 300, 136, '#141821', 4);
-  }
-  circle(ctx, 300, 110, 4, '#d94f3d');
-  // Big brass gear: its top tooth is missing in the changed panel.
-  ctx.fillStyle = '#c9920e';
-  ctx.beginPath();
-  for (let i = 0; i < 8; i += 1) {
-    if (v === 1 && i === 6) continue; // the missing tooth
-    const a = (i / 8) * Math.PI * 2;
-    const tx = 480 + Math.cos(a) * 58;
-    const ty = 150 + Math.sin(a) * 58;
-    ctx.moveTo(tx + 10, ty);
-    ctx.arc(tx, ty, 10, 0, Math.PI * 2);
-  }
-  ctx.fill();
-  circle(ctx, 480, 150, 48, '#c9920e');
-  circle(ctx, 480, 150, 34, '#8a6a1d');
-  circle(ctx, 480, 150, 10, '#5d3d24');
-  // Bookshelf with books: one book missing in the changed panel.
-  rect(ctx, 430, 250, 150, 190, '#4a3220');
-  for (const sy of [290, 340, 390]) rect(ctx, 438, sy, 134, 8, '#6b4423');
-  const books = ['#d94f3d', '#2a9d8f', '#e9c46a', '#8e6cc8', '#4a7fb5', '#e8722a'];
-  books.forEach((c, i) => {
-    if (v === 1 && i === 2) return; // the missing book
-    rect(ctx, 444 + i * 20, 252, 16, 38, c);
-  });
-  books.forEach((c, i) => rect(ctx, 444 + i * 20, 302, 16, 38, books[(i + 2) % books.length]));
-  rect(ctx, 444, 352, 60, 38, '#2a9d8f');
-  rect(ctx, 510, 352, 50, 38, '#e9c46a');
-  circle(ctx, 470, 410, 12, '#c9920e');
-  // Rug: its stripe is gold in the original, teal in the changed panel.
-  ellipse(ctx, 300, 500, 130, 34, '#a83a32');
-  ellipse(ctx, 300, 500, 104, 24, v === 0 ? '#ffd34d' : '#2a9d8f');
-  ellipse(ctx, 300, 500, 70, 15, '#a83a32');
-  // Cat on the rug: tail up in the original, tail down in the changed panel.
-  ellipse(ctx, 300, 468, 34, 26, '#e8722a');
-  circle(ctx, 300, 428, 20, '#e8722a');
-  poly(ctx, [[284, 414], [290, 396], [296, 412]], '#e8722a');
-  poly(ctx, [[304, 412], [310, 396], [316, 414]], '#e8722a');
-  if (v === 0) {
-    ctx.strokeStyle = '#e8722a';
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.moveTo(330, 470);
-    ctx.quadraticCurveTo(352, 450, 344, 424);
-    ctx.stroke();
-  } else {
-    ctx.strokeStyle = '#e8722a';
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.moveTo(330, 474);
-    ctx.quadraticCurveTo(348, 490, 336, 500);
-    ctx.stroke();
-  }
-  circle(ctx, 293, 426, 3, '#141821');
-  circle(ctx, 307, 426, 3, '#141821');
-  // Teapot on its table, with steam in the original only.
-  rect(ctx, 84, 392, 90, 10, '#4a3220');
-  rect(ctx, 92, 402, 8, 48, '#4a3220');
-  rect(ctx, 158, 402, 8, 48, '#4a3220');
-  ellipse(ctx, 129, 380, 26, 18, '#4a7fb5');
-  circle(ctx, 129, 360, 8, '#4a7fb5');
-  line(ctx, 104, 372, 92, 360, '#4a7fb5', 5);
-  if (v === 0) {
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  // Lighthouse on the right. Difference 2: the top red band is missing
+  // on the right; difference 5: its little flag is missing on the right.
+  rect(ctx, 448, 356, 52, 10, '#5a4632');
+  poly(ctx, [[448, 168], [500, 168], [492, 356], [456, 356]], '#f6f1e6');
+  rect(ctx, 452, 168, 44, 34, '#d94f3d');
+  if (!variant) rect(ctx, 450, 236, 48, 34, '#d94f3d');
+  rect(ctx, 454, 304, 40, 34, '#d94f3d');
+  rect(ctx, 462, 128, 24, 40, '#33414f');
+  poly(ctx, [[456, 128], [492, 128], [474, 104]], '#d94f3d');
+  circle(ctx, 474, 116, 9, '#ffe9a8');
+  if (!variant) {
+    ctx.strokeStyle = '#33414f';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(129, 350);
-    ctx.quadraticCurveTo(122, 338, 129, 326);
-    ctx.quadraticCurveTo(136, 314, 129, 302);
+    ctx.moveTo(474, 104);
+    ctx.lineTo(474, 76);
     ctx.stroke();
+    poly(ctx, [[474, 76], [508, 84], [474, 94]], '#d94f3d');
   }
-  circle(ctx, 168, 384, 10, '#f4ede0');
-  // Potted plant: a pink flower in the original, none in the changed panel.
-  poly(ctx, [[512, 470], [548, 470], [542, 500], [518, 500]], '#a83a32');
-  line(ctx, 530, 470, 530, 428, '#2f6b43', 4);
-  ellipse(ctx, 516, 442, 12, 7, '#3f7a4a');
-  ellipse(ctx, 544, 442, 12, 7, '#3f7a4a');
-  if (v === 0) {
-    circle(ctx, 530, 424, 9, '#e88bb0');
-    circle(ctx, 530, 424, 4, '#ffd34d');
+  // Sailboat, centre left. Difference 3: red sail on the left, blue on
+  // the right.
+  ctx.strokeStyle = '#5a4632';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(182, 408);
+  ctx.lineTo(182, 330);
+  ctx.stroke();
+  poly(ctx, [[186, 336], [186, 402], [238, 402]], variant ? '#3f6fb5' : '#d94f3d');
+  poly(ctx, [[178, 344], [178, 402], [140, 402]], '#f6f1e6');
+  poly(ctx, [[120, 408], [250, 408], [232, 432], [138, 432]], '#7a4a2b');
+  // Rowboat.
+  poly(ctx, [[320, 478], [392, 478], [376, 496], [336, 496]], '#8a5a2e');
+  // Dock with crates, bottom left. Difference 6: three crates on the
+  // left, two on the right.
+  rect(ctx, 24, 496, 170, 12, '#6b4a2b');
+  rect(ctx, 36, 508, 10, 44, '#6b4a2b');
+  rect(ctx, 168, 508, 10, 44, '#6b4a2b');
+  rect(ctx, 52, 462, 34, 34, '#b07a3e');
+  rect(ctx, 92, 462, 34, 34, '#c08a45');
+  if (!variant) rect(ctx, 72, 428, 34, 34, '#a86f36');
+  ctx.strokeStyle = '#7a4a2b';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(52, 462, 34, 34);
+  ctx.strokeRect(92, 462, 34, 34);
+  if (!variant) ctx.strokeRect(72, 428, 34, 34);
+  // Buoy. Difference 7: red on the left, green on the right.
+  circle(ctx, 520, 472, 14, variant ? '#3fae6a' : '#d94f3d');
+  rect(ctx, 514, 446, 12, 12, '#33414f');
+  ctx.beginPath();
+  ctx.moveTo(508, 486);
+  ctx.lineTo(532, 486);
+  ctx.lineTo(526, 496);
+  ctx.lineTo(514, 496);
+  ctx.closePath();
+  ctx.fillStyle = variant ? '#3fae6a' : '#d94f3d';
+  ctx.fill();
+}
+
+// ---------------------------------------------------------------------------
+// Scene 2 — Night Market. Lantern strings, two stalls, moon, cat, fruit.
+// ---------------------------------------------------------------------------
+function drawMarket(ctx, variant) {
+  sky(ctx, '#1c2340', '#3a2d5e');
+  for (const [sx, sy, sr] of [[60, 60, 2], [150, 40, 1.5], [240, 90, 2], [330, 50, 1.5], [420, 36, 2], [560, 130, 1.5], [90, 130, 1.5], [470, 90, 1.5]]) {
+    circle(ctx, sx, sy, sr, '#ffe9a8');
+  }
+  // Moon. Difference 3: the right picture hides it behind a cloud.
+  circle(ctx, 522, 72, 30, '#f6ead0');
+  circle(ctx, 512, 64, 26, '#e8d5a8');
+  if (variant) cloud(ctx, 492, 66, 1.1, '#8d86a8');
+  // String lights across the top. Difference 7: one bulb is dark on the
+  // right. Difference 1 (lanterns) hangs below the same line.
+  ctx.strokeStyle = '#0f1226';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, 96);
+  ctx.quadraticCurveTo(305, 138, 610, 96);
+  ctx.stroke();
+  const bulbs = [60, 160, 260, 360, 460, 556];
+  bulbs.forEach((bx, i) => {
+    const by = 96 + Math.sin((bx / 610) * Math.PI) * 30;
+    const dark = variant && i === 4;
+    circle(ctx, bx, by + 12, 8, dark ? '#5a5470' : '#ffd94d');
+    if (!dark) {
+      ctx.beginPath();
+      ctx.arc(bx, by + 12, 15, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,217,77,0.25)';
+      ctx.fill();
+    }
+  });
+  // Paper lanterns under the line. Difference 1: the middle lantern is
+  // missing on the right.
+  for (const [lx, lcol] of [[140, '#e2574c'], [305, '#f2a541'], [470, '#e2574c']]) {
+    if (variant && lx === 305) continue;
+    circle(ctx, lx, 168, 20, lcol);
+    rect(ctx, lx - 8, 146, 16, 6, '#f6d365');
+    rect(ctx, lx - 8, 184, 16, 6, '#f6d365');
+  }
+  // Left stall. Difference 2: striped awning on the left, plain red on
+  // the right. Difference 6: the sign carries a star on the left, a
+  // circle on the right.
+  rect(ctx, 44, 236, 10, 190, '#5a4632');
+  rect(ctx, 266, 236, 10, 190, '#5a4632');
+  poly(ctx, [[36, 236], [284, 236], [266, 196], [54, 196]], '#c94f42');
+  if (!variant) {
+    for (const sx of [86, 136, 186, 236]) poly(ctx, [[sx - 14, 236], [sx + 14, 236], [sx + 8, 196], [sx - 8, 196]], '#f6ead0');
+  }
+  rect(ctx, 96, 150, 128, 34, '#f6ead0');
+  ctx.strokeStyle = '#5a4632';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(96, 150, 128, 34);
+  if (!variant) {
+    poly(ctx, [[160, 158], [163, 166], [171, 166], [165, 171], [167, 179], [160, 174], [153, 179], [155, 171], [149, 166], [157, 166]], '#e2a13a');
+  } else {
+    circle(ctx, 160, 167, 8, '#3f6fb5');
+  }
+  rect(ctx, 36, 330, 248, 96, '#7a4a2b');
+  rect(ctx, 36, 330, 248, 12, '#9a6a3e');
+  circle(ctx, 90, 312, 18, '#e2574c');
+  circle(ctx, 130, 312, 18, '#f2a541');
+  circle(ctx, 170, 312, 18, '#e2574c');
+  // Cat asleep on the left stall's counter. Difference 4: no cat on the
+  // right.
+  if (!variant) {
+    ctx.beginPath();
+    ctx.ellipse(228, 318, 26, 12, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#3a3a44';
+    ctx.fill();
+    circle(ctx, 250, 306, 11, '#3a3a44');
+    poly(ctx, [[244, 298], [247, 288], [251, 297]], '#3a3a44');
+    poly(ctx, [[254, 297], [258, 288], [260, 298]], '#3a3a44');
+  }
+  // Right stall.
+  rect(ctx, 336, 256, 10, 170, '#5a4632');
+  rect(ctx, 560, 256, 10, 170, '#5a4632');
+  poly(ctx, [[328, 256], [578, 256], [560, 216], [346, 216]], '#3f6fb5');
+  for (const sx of [378, 428, 478, 528]) poly(ctx, [[sx - 14, 256], [sx + 14, 256], [sx + 8, 216], [sx - 8, 216]], '#f6ead0');
+  rect(ctx, 328, 350, 250, 76, '#7a4a2b');
+  rect(ctx, 328, 350, 250, 12, '#9a6a3e');
+  // Basket of fruit. Difference 5: oranges on the left, red apples on
+  // the right.
+  poly(ctx, [[396, 330], [468, 330], [456, 356], [408, 356]], '#b07a3e');
+  for (const [fx, fy] of [[412, 322], [432, 316], [452, 322], [422, 328], [442, 328]]) {
+    circle(ctx, fx, fy, 10, variant ? '#c93a3a' : '#f28c28');
+  }
+  circle(ctx, 520, 322, 12, '#7fae7a');
+  circle(ctx, 544, 330, 10, '#7fae7a');
+  // Cobbles.
+  rect(ctx, 0, 426, 610, 174, '#4a4266');
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 5; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(0, 460 + i * 32);
+    ctx.lineTo(610, 460 + i * 32);
+    ctx.stroke();
   }
 }
 
-export const SCENES = [drawHarbor, drawCamp, drawAttic];
+// ---------------------------------------------------------------------------
+// Scene 3 — Tea Garden. Mountain, pagoda, pond, bridge, tea house, pines.
+// ---------------------------------------------------------------------------
+function drawGarden(ctx, variant) {
+  sky(ctx, '#bfe3d8', '#eaf6ee');
+  cloud(ctx, 90, 70, 1, '#ffffff');
+  cloud(ctx, 420, 50, 0.8, '#ffffff');
+  // Mountain with a snow cap. Difference 6: no snow on the right.
+  poly(ctx, [[0, 360], [130, 130], [300, 360]], '#7d9bb5');
+  if (!variant) poly(ctx, [[104, 176], [130, 130], [158, 178], [142, 186], [128, 172], [116, 188]], '#ffffff');
+  poly(ctx, [[220, 360], [400, 210], [560, 360]], '#6b8aa5');
+  // Pine trees. Difference 3: the middle pine loses its top on the right.
+  function pine(px, py, s, top) {
+    ctx.fillStyle = '#5a4632';
+    ctx.fillRect(px - 3 * s, py, 6 * s, 26 * s);
+    ctx.fillStyle = '#3f7a4e';
+    if (top) poly(ctx, [[px, py - 62 * s], [px + 26 * s, py], [px - 26 * s, py]], '#3f7a4e');
+    poly(ctx, [[px, py - 34 * s], [px + 32 * s, py + 14 * s], [px - 32 * s, py + 14 * s]], '#4c8a5c');
+    poly(ctx, [[px, py - 8 * s], [px + 38 * s, py + 26 * s], [px - 38 * s, py + 26 * s]], '#5a9a68');
+  }
+  pine(330, 330, 1, !variant);
+  pine(80, 360, 0.8, true);
+  pine(560, 350, 0.9, true);
+  // Tea house, left. Difference 7: its window glows warm on the left,
+  // dark on the right.
+  rect(ctx, 44, 330, 180, 130, '#c9a06a');
+  poly(ctx, [[28, 332], [240, 332], [196, 286], [72, 286]], '#8a4a3a');
+  rect(ctx, 56, 300, 156, 12, '#8a4a3a');
+  rect(ctx, 106, 372, 56, 88, '#5a4632');
+  rect(ctx, 118, 360, 44, 34, variant ? '#3a3f4a' : '#ffd94d');
+  ctx.strokeStyle = '#5a4632';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(118, 360, 44, 34);
+  ctx.beginPath();
+  ctx.moveTo(140, 360);
+  ctx.lineTo(140, 394);
+  ctx.moveTo(118, 377);
+  ctx.lineTo(162, 377);
+  ctx.stroke();
+  // Pagoda, right. Difference 1: three tiers on the left, two on the
+  // right.
+  rect(ctx, 452, 300, 96, 80, '#a8573c');
+  function tier(y, w) {
+    rect(ctx, 500 - w / 2, y, w, 26, '#a8573c');
+    poly(ctx, [[500 - w / 2 - 16, y + 26], [500 + w / 2 + 16, y + 26], [500 + w / 2, y], [500 - w / 2, y]], '#33414f');
+  }
+  tier(274, 110);
+  tier(232, 92);
+  if (!variant) tier(190, 74);
+  poly(ctx, [[488, 190], [512, 190], [500, 168]], variant ? '#33414f' : '#c9a13a');
+  // Stone lantern by the pond. Difference 4: lit flame on the left,
+  // cold grey on the right.
+  rect(ctx, 292, 440, 18, 40, '#8d8d94');
+  rect(ctx, 282, 428, 38, 14, '#8d8d94');
+  rect(ctx, 288, 404, 26, 24, '#a9a9b0');
+  circle(ctx, 301, 416, 7, variant ? '#6a6a72' : '#ffd94d');
+  poly(ctx, [[278, 404], [324, 404], [301, 384]], '#6a6a72');
+  // Pond with koi. Difference 2: three koi on the left, two on the right.
+  const pond = ctx.createLinearGradient(0, 470, 0, 600);
+  pond.addColorStop(0, '#5fb3c9');
+  pond.addColorStop(1, '#2f7d96');
+  ctx.fillStyle = pond;
+  ctx.fillRect(0, 470, 610, 130);
+  function koi(kx, ky, col) {
+    ctx.beginPath();
+    ctx.ellipse(kx, ky, 20, 8, 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+    poly(ctx, [[kx - 20, ky], [kx - 30, ky - 7], [kx - 30, ky + 7]], col);
+  }
+  koi(120, 520, '#f28c28');
+  koi(200, 545, '#f6f1e6');
+  if (!variant) koi(280, 520, '#e2574c');
+  // Arched bridge. Difference 5: five planks on the left, four on the
+  // right.
+  ctx.strokeStyle = '#8a4a3a';
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.arc(150, 560, 78, Math.PI, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 3;
+  const planks = variant ? 4 : 5;
+  for (let i = 0; i < planks; i += 1) {
+    const a = Math.PI + ((i + 0.5) / planks) * Math.PI;
+    const bx = 150 + Math.cos(a) * 78;
+    const by = 560 + Math.sin(a) * 78;
+    ctx.beginPath();
+    ctx.moveTo(bx, by - 8);
+    ctx.lineTo(bx, by + 8);
+    ctx.stroke();
+  }
+  // Grass.
+  rect(ctx, 0, 440, 610, 30, '#6fae62');
+}
 
-export const DIFFS = [
-  [
-    { x: 430, y: 95, r: 26, label: 'a gull' },
-    { x: 95, y: 205, r: 26, label: 'the lighthouse window' },
-    { x: 398, y: 272, r: 26, label: 'the boat flag' },
-    { x: 170, y: 478, r: 26, label: 'an extra crate' },
-    { x: 470, y: 105, r: 34, label: 'the sun rays' },
-    { x: 520, y: 390, r: 26, label: 'the jumping fish' },
-    { x: 268, y: 392, r: 26, label: 'the pier lantern' },
-  ],
-  [
-    { x: 200, y: 60, r: 24, label: 'a star' },
-    { x: 492, y: 96, r: 22, label: 'a moon crater' },
-    { x: 122, y: 178, r: 26, label: 'the owl eyes' },
-    { x: 300, y: 365, r: 28, label: 'the tent flap' },
-    { x: 335, y: 478, r: 24, label: 'an extra log' },
-    { x: 450, y: 500, r: 26, label: 'the mushroom cap' },
-    { x: 205, y: 490, r: 24, label: 'the water bottle' },
-  ],
-  [
-    { x: 300, y: 110, r: 30, label: 'the clock hands' },
-    { x: 340, y: 445, r: 26, label: 'the cat tail' },
-    { x: 492, y: 271, r: 22, label: 'a missing book' },
-    { x: 530, y: 424, r: 24, label: 'the plant flower' },
-    { x: 129, y: 330, r: 26, label: 'the teapot steam' },
-    { x: 480, y: 92, r: 24, label: 'a gear tooth' },
-    { x: 120, y: 115, r: 30, label: 'the window sky' },
-  ],
+export const SCENES = [
+  {
+    id: 'harbor',
+    name: 'Harbor Morning',
+    hint: 'Sun, lighthouse, boats and the dock',
+    draw: drawHarbor,
+    diffs: [
+      { id: 'sun-rays', x: 92, y: 82, r: 40, label: 'Sun rays' },
+      { id: 'lighthouse-band', x: 474, y: 253, r: 26, label: 'Lighthouse band' },
+      { id: 'sail-colour', x: 190, y: 372, r: 30, label: 'Sail colour' },
+      { id: 'third-gull', x: 345, y: 152, r: 22, label: 'Third gull' },
+      { id: 'lighthouse-flag', x: 488, y: 84, r: 20, label: 'Lighthouse flag' },
+      { id: 'top-crate', x: 89, y: 445, r: 26, label: 'Top crate' },
+      { id: 'buoy-colour', x: 520, y: 472, r: 22, label: 'Buoy colour' },
+    ],
+  },
+  {
+    id: 'market',
+    name: 'Night Market',
+    hint: 'Lanterns, stalls, moonlight and the cat',
+    draw: drawMarket,
+    diffs: [
+      { id: 'middle-lantern', x: 305, y: 168, r: 24, label: 'Middle lantern' },
+      { id: 'awning-stripes', x: 160, y: 216, r: 28, label: 'Awning stripes' },
+      { id: 'moon-cloud', x: 522, y: 72, r: 30, label: 'Moon behind cloud' },
+      { id: 'stall-cat', x: 238, y: 312, r: 22, label: 'Stall cat' },
+      { id: 'fruit-colour', x: 432, y: 322, r: 26, label: 'Fruit colour' },
+      { id: 'sign-star', x: 160, y: 167, r: 20, label: 'Sign star' },
+      { id: 'dark-bulb', x: 460, y: 120, r: 18, label: 'Dark bulb' },
+    ],
+  },
+  {
+    id: 'garden',
+    name: 'Tea Garden',
+    hint: 'Mountain, pagoda, pond and tea house',
+    draw: drawGarden,
+    diffs: [
+      { id: 'pagoda-tier', x: 500, y: 203, r: 26, label: 'Pagoda tier' },
+      { id: 'third-koi', x: 280, y: 520, r: 24, label: 'Third koi' },
+      { id: 'pine-top', x: 330, y: 288, r: 26, label: 'Pine top' },
+      { id: 'lantern-flame', x: 301, y: 416, r: 20, label: 'Lantern flame' },
+      { id: 'bridge-plank', x: 150, y: 482, r: 24, label: 'Bridge plank' },
+      { id: 'snow-cap', x: 130, y: 160, r: 28, label: 'Snow cap' },
+      { id: 'tea-window', x: 140, y: 377, r: 24, label: 'Tea window' },
+    ],
+  },
 ];
